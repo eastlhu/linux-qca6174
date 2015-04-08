@@ -30,11 +30,12 @@
 #include <linux/firmware.h>
 #include <linux/slab.h>
 #include <linux/u64_stats_sync.h>
+#include <linux/cpumask.h>
 
 #include "be_hw.h"
 #include "be_roce.h"
 
-#define DRV_VER			"10.4u"
+#define DRV_VER			"10.6.0.1"
 #define DRV_NAME		"be2net"
 #define BE_NAME			"Emulex BladeEngine2"
 #define BE3_NAME		"Emulex BladeEngine3"
@@ -183,6 +184,7 @@ struct be_eq_obj {
 	u16 spurious_intr;
 	struct napi_struct napi;
 	struct be_adapter *adapter;
+	cpumask_var_t  affinity_mask;
 
 #ifdef CONFIG_NET_RX_BUSY_POLL
 #define BE_EQ_IDLE		0
@@ -362,6 +364,7 @@ struct be_vf_cfg {
 	u16 vlan_tag;
 	u32 tx_rate;
 	u32 plink_tracking;
+	u32 privileges;
 };
 
 enum vf_state {
@@ -468,6 +471,7 @@ struct be_adapter {
 
 	u8 __iomem *csr;	/* CSR BAR used only for BE2/3 */
 	u8 __iomem *db;		/* Door Bell */
+	u8 __iomem *pcicfg;	/* On SH,BEx only. Shadow of PCI config space */
 
 	struct mutex mbox_lock; /* For serializing mbox cmds to BE card */
 	struct be_dma_mem mbox_mem;

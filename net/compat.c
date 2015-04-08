@@ -49,6 +49,13 @@ ssize_t get_compat_msghdr(struct msghdr *kmsg,
 	    __get_user(kmsg->msg_controllen, &umsg->msg_controllen) ||
 	    __get_user(kmsg->msg_flags, &umsg->msg_flags))
 		return -EFAULT;
+
+	if (!uaddr)
+		kmsg->msg_namelen = 0;
+
+	if (kmsg->msg_namelen < 0)
+		return -EINVAL;
+
 	if (kmsg->msg_namelen > sizeof(struct sockaddr_storage))
 		kmsg->msg_namelen = sizeof(struct sockaddr_storage);
 	kmsg->msg_control = compat_ptr(tmp3);
@@ -71,6 +78,8 @@ ssize_t get_compat_msghdr(struct msghdr *kmsg,
 
 	if (nr_segs > UIO_MAXIOV)
 		return -EMSGSIZE;
+
+	kmsg->msg_iocb = NULL;
 
 	err = compat_rw_copy_check_uvector(save_addr ? READ : WRITE,
 					   compat_ptr(uiov), nr_segs,

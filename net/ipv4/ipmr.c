@@ -266,7 +266,7 @@ static int __net_init ipmr_rules_init(struct net *net)
 	return 0;
 
 err2:
-	kfree(mrt);
+	ipmr_free_table(mrt);
 err1:
 	fib_rules_unregister(ops);
 	return err;
@@ -276,11 +276,13 @@ static void __net_exit ipmr_rules_exit(struct net *net)
 {
 	struct mr_table *mrt, *next;
 
+	rtnl_lock();
 	list_for_each_entry_safe(mrt, next, &net->ipv4.mr_tables, list) {
 		list_del(&mrt->list);
 		ipmr_free_table(mrt);
 	}
 	fib_rules_unregister(net->ipv4.mr_rules_ops);
+	rtnl_unlock();
 }
 #else
 #define ipmr_for_each_table(mrt, net) \
@@ -306,7 +308,10 @@ static int __net_init ipmr_rules_init(struct net *net)
 
 static void __net_exit ipmr_rules_exit(struct net *net)
 {
+	rtnl_lock();
 	ipmr_free_table(net->ipv4.mrt);
+	net->ipv4.mrt = NULL;
+	rtnl_unlock();
 }
 #endif
 
@@ -1642,7 +1647,8 @@ static struct notifier_block ip_mr_notifier = {
  *	important for multicast video.
  */
 
-static void ip_encap(struct sk_buff *skb, __be32 saddr, __be32 daddr)
+static void ip_encap(struct net *net, struct sk_buff *skb,
+		     __be32 saddr, __be32 daddr)
 {
 	struct iphdr *iph;
 	const struct iphdr *old_iph = ip_hdr(skb);
@@ -1661,7 +1667,7 @@ static void ip_encap(struct sk_buff *skb, __be32 saddr, __be32 daddr)
 	iph->protocol	=	IPPROTO_IPIP;
 	iph->ihl	=	5;
 	iph->tot_len	=	htons(skb->len);
-	ip_select_ident(skb, NULL);
+	ip_select_ident(net, skb, NULL);
 	ip_send_check(iph);
 
 	memset(&(IPCB(skb)->opt), 0, sizeof(IPCB(skb)->opt));
@@ -1758,7 +1764,7 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 	 * What do we do with netfilter? -- RR
 	 */
 	if (vif->flags & VIFF_TUNNEL) {
-		ip_encap(skb, vif->local, vif->remote);
+		ip_encap(net, skb, vif->local, vif->remote);
 		/* FIXME: extra output firewall step used to be here. --RR */
 		vif->dev->stats.tx_packets++;
 		vif->dev->stats.tx_bytes += skb->len;
@@ -2280,8 +2286,8 @@ static int ipmr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
 		rtm->rtm_protocol = RTPROT_MROUTED;
 	rtm->rtm_flags    = 0;
 
-	if (nla_put_be32(skb, RTA_SRC, c->mfc_origin) ||
-	    nla_put_be32(skb, RTA_DST, c->mfc_mcastgrp))
+	if (nla_put_in_addr(skb, RTA_SRC, c->mfc_origin) ||
+	    nla_put_in_addr(skb, RTA_DST, c->mfc_mcastgrp))
 		goto nla_put_failure;
 	err = __ipmr_fill_mroute(mrt, skb, c, rtm);
 	/* do not break the dump if cache is unresolved */
